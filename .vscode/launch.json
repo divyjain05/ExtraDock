@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ExtraDock}",
+            "name": "Debug ExtraDock",
+            "target": "ExtraDock",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ExtraDock"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ExtraDock}",
+            "name": "Release ExtraDock",
+            "target": "ExtraDock",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ExtraDock"
+        }
+    ]
+}

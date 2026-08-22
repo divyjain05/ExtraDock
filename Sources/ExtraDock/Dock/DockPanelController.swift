@@ -84,8 +84,6 @@ final class DockPanelController: NSObject {
         hoverMonitor.stop()
         iconRefreshTimer?.invalidate()
         iconRefreshTimer = nil
-        pendingHideWorkItem?.cancel()
-        pendingHideWorkItem = nil
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         hide(animated: false)
     }
@@ -195,28 +193,17 @@ final class DockPanelController: NSObject {
     private func show(animated: Bool) {
         guard !isExpanded else { return }
         isExpanded = true
-        let collapsed = collapsedFrame()
-        panel.setFrame(collapsed, display: true)
+        panel.setFrame(collapsedFrame(), display: true)
         panel.orderFrontRegardless()
-        let expanded = expandedFrame()
-        NSLog("ExtraDock: show() collapsed=\(collapsed) expanded=\(expanded)")
-        panel.setFrame(expanded, display: true, animate: animated)
+        panel.setFrame(expandedFrame(), display: true, animate: animated)
     }
 
     private func hide(animated: Bool) {
         guard isExpanded else { return }
         isExpanded = false
-        NSLog("ExtraDock: hide()")
         panel.setFrame(collapsedFrame(), display: true, animate: animated)
         panel.orderOut(nil)
     }
-
-    // Hides are debounced: leaving the trigger zone schedules a hide instead
-    // of firing immediately. The Dock icon's hit area is tiny (~40x50pt), and
-    // without this, normal hand tremor while crossing from the icon into the
-    // panel caused show()/hide() to thrash every frame — the panel would
-    // start animating in, get cancelled, and never visibly settle.
-    private var pendingHideWorkItem: DispatchWorkItem?
 
     private func handleMouseMoved(_ location: NSPoint) {
         let inTriggerZone: Bool
@@ -235,22 +222,10 @@ final class DockPanelController: NSObject {
         let inPanel = isExpanded && panel.frame.insetBy(dx: -8, dy: -8).contains(location)
 
         if inTriggerZone || inPanel {
-            pendingHideWorkItem?.cancel()
-            pendingHideWorkItem = nil
             show(animated: true)
         } else if isExpanded {
-            scheduleHide()
+            hide(animated: true)
         }
-    }
-
-    private func scheduleHide() {
-        guard pendingHideWorkItem == nil else { return }
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.pendingHideWorkItem = nil
-            self?.hide(animated: true)
-        }
-        pendingHideWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
     }
 
     private func launch(_ app: DockApp) {

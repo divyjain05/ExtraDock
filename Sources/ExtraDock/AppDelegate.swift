@@ -14,17 +14,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
         dockPanelController = controller
 
-        setUpStatusItem()
+        applyMenuBarIconPreference()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         dockPanelController?.stop()
     }
 
-    private func setUpStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "ExtraDock")
+    // The menu bar icon can be turned off in Settings. When it is, the same
+    // actions stay reachable via right-click on the Dock icon (see
+    // applicationDockMenu(_:)) so the app is never left without a way to
+    // reach Settings or Quit.
+    private func applyMenuBarIconPreference() {
+        if AppPreferences.showMenuBarIcon {
+            guard statusItem == nil else { return }
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            item.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "ExtraDock")
+            item.menu = buildMenu()
+            statusItem = item
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
 
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        buildMenu()
+    }
+
+    private func buildMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show Extra Dock", action: #selector(togglePanel), target: self)
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), target: self)
@@ -34,9 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit ExtraDock", action: #selector(quit), target: self)
-
-        item.menu = menu
-        statusItem = item
+        return menu
     }
 
     @objc private func togglePanel() {
@@ -45,9 +61,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         if settingsWindowController == nil {
-            settingsWindowController = SettingsWindowController { [weak self] in
-                self?.dockPanelController?.update(apps: DockStore.shared.load())
-            }
+            settingsWindowController = SettingsWindowController(
+                onChange: { [weak self] in
+                    self?.dockPanelController?.update(apps: DockStore.shared.load())
+                },
+                onMenuBarIconChange: { [weak self] _ in
+                    self?.applyMenuBarIconPreference()
+                }
+            )
         }
         settingsWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)

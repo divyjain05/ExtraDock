@@ -163,3 +163,19 @@ Build a macOS utility that adds a second "dock" of apps living on the right edge
 **Consequence:** the panel's resting position moved — it no longer dips down to overlap the Dock's own icon row (previously anchored near `screen.minY`); it now sits entirely above the triggering icon. `bottomInset` was removed as dead code.
 
 **Known tradeoff (carried over, unresolved):** the SwiftUI content view still gets compressed with the window during the height animation (no separate clip mask) — same simplification noted in the first grow-based attempt. Revisit if the ~150ms squish reads as glitchy rather than a smooth reveal.
+
+---
+
+## 2026-08-23 — Menu bar icon is optional, Dock right-click is the permanent fallback
+
+**Decision:** Added a "Show Menu Bar Icon" toggle in Settings (`AppPreferences.showMenuBarIcon`, backed by `UserDefaults`, default `true`). `AppDelegate.applyMenuBarIconPreference()` adds/removes the `NSStatusItem` live when toggled. Regardless of that setting, `NSApplicationDelegate.applicationDockMenu(_:)` always returns the same menu (Show Extra Dock / Settings / Quit), reachable by right-clicking the Dock icon.
+
+**Why the Dock-menu fallback is non-negotiable:** turning off the only way to reach Settings/Quit would strand the user with a background app they can't control except via Force Quit. Since ExtraDock already shows a real Dock icon (see the "show a real Dock icon after all" reversal above), giving it a right-click menu costs nothing and guarantees the app is never fully "silent."
+
+---
+
+## 2026-08-23 — Removed the hide debounce; leaving the trigger zone hides immediately
+
+**Decision:** `DockPanelController.handleMouseMoved` no longer schedules a delayed hide (the `pendingHideWorkItem` / `scheduleHide()` machinery, ~0.35s debounce) — leaving the icon/panel hit zone now calls `hide(animated: true)` directly.
+
+**Why:** requested — the delay made the panel linger noticeably after the cursor moved away. The debounce was originally added to work around show()/hide() thrashing on tiny cursor jitter near the boundary, but that thrashing turned out to be a symptom of the broken `NSAnimationContext` animation path (see "reveal animation... setFrame" decision above), not something that actually needed a debounce once `setFrame(_:display:animate:)` was in place. Removed as unnecessary now that the underlying animation is reliable.

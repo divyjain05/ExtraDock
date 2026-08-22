@@ -7,12 +7,20 @@ final class SettingsViewModel: ObservableObject {
     @Published var launchAtLogin: Bool {
         didSet { LoginItemManager.setEnabled(launchAtLogin) }
     }
+    @Published var showMenuBarIcon: Bool {
+        didSet {
+            AppPreferences.showMenuBarIcon = showMenuBarIcon
+            onMenuBarIconChange?(showMenuBarIcon)
+        }
+    }
 
     var onChange: (() -> Void)?
+    var onMenuBarIconChange: ((Bool) -> Void)?
 
     init() {
         apps = DockStore.shared.load()
         launchAtLogin = LoginItemManager.isEnabled
+        showMenuBarIcon = AppPreferences.showMenuBarIcon
     }
 
     func remove(_ app: DockApp) {
@@ -38,9 +46,10 @@ final class SettingsViewModel: ObservableObject {
 final class SettingsWindowController: NSWindowController {
     private let model: SettingsViewModel
 
-    init(onChange: @escaping () -> Void) {
+    init(onChange: @escaping () -> Void, onMenuBarIconChange: @escaping (Bool) -> Void) {
         let model = SettingsViewModel()
         model.onChange = onChange
+        model.onMenuBarIconChange = onMenuBarIconChange
         self.model = model
 
         let hosting = NSHostingController(rootView: SettingsView(model: model))

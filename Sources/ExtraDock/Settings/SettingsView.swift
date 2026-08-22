@@ -36,6 +36,8 @@ struct SettingsView: View {
                 Spacer()
                 Toggle("Launch at Login", isOn: $model.launchAtLogin)
             }
+
+            Toggle("Show Menu Bar Icon", isOn: $model.showMenuBarIcon)
         }
         .padding(20)
         .frame(width: 380)

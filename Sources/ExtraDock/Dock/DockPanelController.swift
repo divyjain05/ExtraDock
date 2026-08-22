@@ -22,7 +22,6 @@ final class DockPanelController: NSObject {
     private let iconSize: CGFloat = 56
     private let panelPadding: CGFloat = 16
     private let iconSpacing: CGFloat = 14
-    private let bottomInset: CGFloat = 4
 
     // Full size of the panel once expanded. Held separately from panel.frame
     // because the collapsed (hidden) state also varies panel.frame's height —
@@ -166,24 +165,23 @@ final class DockPanelController: NSObject {
         return screen.midX - width / 2
     }
 
-    // The resting frame: full content size, centered above the Dock icon,
-    // sitting just above the real Dock.
+    // Both frames share the same bottom edge: the top of the Dock icon
+    // itself. Only the height animates (1pt -> full), so the panel grows
+    // straight up from a fixed baseline sitting right on top of the icon —
+    // reads as rising directly out of it, rather than sliding up from
+    // somewhere else on screen.
+    private func anchorY() -> CGFloat {
+        dockIconFrame?.maxY ?? targetScreen().frame.minY
+    }
+
     private func expandedFrame() -> NSRect {
-        let screen = targetScreen().frame
-        let origin = NSPoint(x: targetX(forWidth: contentSize.width), y: screen.minY + bottomInset)
+        let origin = NSPoint(x: targetX(forWidth: contentSize.width), y: anchorY())
         return NSRect(origin: origin, size: contentSize)
     }
 
-    // The starting frame for the slide: same size as expandedFrame (no
-    // squish/resize — a clean rigid-body slide), positioned so its top edge
-    // sits right at the bottom of the Dock icon, with the rest of the panel
-    // extending below the screen. Sliding from here to expandedFrame() reads
-    // as the panel rising straight up out of that icon.
     private func collapsedFrame() -> NSRect {
-        let screen = targetScreen().frame
-        let anchorY = (dockIconFrame?.minY ?? screen.minY) - contentSize.height
-        let origin = NSPoint(x: targetX(forWidth: contentSize.width), y: anchorY)
-        return NSRect(origin: origin, size: contentSize)
+        let origin = NSPoint(x: targetX(forWidth: contentSize.width), y: anchorY())
+        return NSRect(origin: origin, size: NSSize(width: contentSize.width, height: 1))
     }
 
     private func positionOffscreen() {

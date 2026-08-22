@@ -151,3 +151,15 @@ Build a macOS utility that adds a second "dock" of apps living on the right edge
 ## Naming
 
 **Decision:** Product name `ExtraDock`, bundle identifier `com.divyjain.extradock`. No source folder, target, or scheme is named after Claude/the assistant — project structure is a plain, ordinary Swift package (`Sources/ExtraDock/...`) as if hand-authored.
+
+---
+
+## 2026-08-23 — Reveal animation, take 3: fixed baseline at the icon's top edge
+
+**Decision:** `collapsedFrame()` and `expandedFrame()` in `DockPanelController` now share the exact same bottom edge — `dockIconFrame.maxY`, the top of the Dock icon. Only the height animates, from `1pt` up to the full panel height; the Y origin never moves. The panel grows straight up from a fixed line sitting on top of the icon.
+
+**Why (third iteration on this):** the first version (full frame sliding from off-screen below) read as coming from the bottom of the screen, not the icon. The second version (constant-size slide, collapsed frame's top edge pinned to the icon's *bottom*) still didn't read as coming from the icon convincingly. This version anchors to the icon's *top* edge specifically, per explicit request, and removes any Y-translation ambiguity by holding the baseline fixed and only growing height — the least ambiguous way to make "emerges from the icon" literally true.
+
+**Consequence:** the panel's resting position moved — it no longer dips down to overlap the Dock's own icon row (previously anchored near `screen.minY`); it now sits entirely above the triggering icon. `bottomInset` was removed as dead code.
+
+**Known tradeoff (carried over, unresolved):** the SwiftUI content view still gets compressed with the window during the height animation (no separate clip mask) — same simplification noted in the first grow-based attempt. Revisit if the ~150ms squish reads as glitchy rather than a smooth reveal.

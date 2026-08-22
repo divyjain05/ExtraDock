@@ -6,7 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
+        AccessibilityPermission.requestIfNeeded()
 
         let apps = DockStore.shared.load()
         let controller = DockPanelController(apps: apps)
@@ -27,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show Extra Dock", action: #selector(togglePanel), target: self)
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), target: self)
+        if !AccessibilityPermission.isGranted {
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Grant Accessibility Access…", action: #selector(openAccessibilitySettings), target: self)
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit ExtraDock", action: #selector(quit), target: self)
 
@@ -47,6 +52,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func quit() {

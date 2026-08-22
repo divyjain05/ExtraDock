@@ -4,3 +4,5 @@ build/
 .DS_Store
 *.xcuserstate
 xcuserdata/
+Scripts/IconGen/AppIcon.iconset/
+Scripts/IconGen/icon-1024-master.png

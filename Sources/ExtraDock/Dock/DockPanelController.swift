@@ -8,8 +8,18 @@ final class DockPanelController: NSObject {
     private var apps: [DockApp]
     private var isExpanded = false
 
+    // Cached on-screen frame of this app's own Dock icon, refreshed
+    // periodically since the Dock reflows icon positions as other apps
+    // launch/quit. nil until Accessibility permission is granted and the
+    // Dock has registered the icon.
+    private var dockIconFrame: CGRect?
+    private var iconRefreshTimer: Timer?
+
+    // Fallback trigger for when the Dock icon's frame isn't known yet
+    // (permission not granted, or the Dock hasn't registered it yet).
     private let edgeTriggerWidth: CGFloat = 6
-    private let edgeTriggerHeight: CGFloat = 220
+    private let edgeTriggerHeight: CGFloat = 320
+
     private let iconSize: CGFloat = 56
     private let panelPadding: CGFloat = 16
     private let iconSpacing: CGFloat = 14
@@ -49,11 +59,35 @@ final class DockPanelController: NSObject {
 
     func start() {
         hoverMonitor.start()
+
+        refreshDockIconFrame()
+        // The Dock can take a moment to register a freshly-launched app's icon.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.refreshDockIconFrame()
+        }
+
+        let timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.refreshDockIconFrame()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        iconRefreshTimer = timer
+
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
+        center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
     }
 
     func stop() {
         hoverMonitor.stop()
+        iconRefreshTimer?.invalidate()
+        iconRefreshTimer = nil
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         hide(animated: false)
+    }
+
+    @objc private func refreshDockIconFrame() {
+        let displayName = NSRunningApplication.current.localizedName ?? "ExtraDock"
+        dockIconFrame = DockIconLocator.currentIconFrame(displayName: displayName)
     }
 
     func update(apps: [DockApp]) {
@@ -76,25 +110,53 @@ final class DockPanelController: NSObject {
             self?.launch(app)
         }
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
-        panel.contentView = hosting
+        let bounds = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
+        hosting.frame = bounds
+        hosting.autoresizingMask = [.width, .height]
+
+        let dropView = DockDropView(frame: bounds)
+        dropView.addSubview(hosting)
+        dropView.onDropApps = { [weak self] urls in
+            self?.handleDrop(urls)
+        }
+
+        panel.contentView = dropView
         panel.setContentSize(NSSize(width: contentWidth, height: contentHeight))
         positionOffscreen()
+    }
+
+    private func handleDrop(_ urls: [URL]) {
+        for url in urls {
+            DockStore.shared.addApp(at: url)
+        }
+        update(apps: DockStore.shared.load())
     }
 
     private func targetScreen() -> NSScreen {
         NSScreen.main ?? NSScreen.screens[0]
     }
 
+    // Where the panel settles horizontally: centered above this app's own
+    // Dock icon when we know where that is, otherwise centered on screen
+    // (matching the Dock's own default bottom-centered position) as a
+    // reasonable fallback.
+    private func targetX(forWidth width: CGFloat) -> CGFloat {
+        let screen = targetScreen().frame
+        if let iconFrame = dockIconFrame {
+            let clampedMidX = min(max(iconFrame.midX, screen.minX + width / 2), screen.maxX - width / 2)
+            return clampedMidX - width / 2
+        }
+        return screen.midX - width / 2
+    }
+
     private func hiddenOrigin() -> NSPoint {
         let screen = targetScreen().frame
-        return NSPoint(x: screen.maxX, y: screen.minY + bottomInset)
+        return NSPoint(x: targetX(forWidth: panel.frame.width), y: screen.minY - panel.frame.height)
     }
 
     private func visibleOrigin() -> NSPoint {
         let screen = targetScreen().frame
-        let width = panel.frame.width
-        return NSPoint(x: screen.maxX - width - 2, y: screen.minY + bottomInset)
+        return NSPoint(x: targetX(forWidth: panel.frame.width), y: screen.minY + bottomInset)
     }
 
     private func positionOffscreen() {
@@ -137,10 +199,18 @@ final class DockPanelController: NSObject {
     }
 
     private func handleMouseMoved(_ location: NSPoint) {
-        let screen = targetScreen().frame
-        let inTriggerZone = (screen.maxX - location.x) <= edgeTriggerWidth
-            && location.y >= screen.minY
-            && location.y <= screen.minY + edgeTriggerHeight
+        let inTriggerZone: Bool
+        if let iconFrame = dockIconFrame {
+            inTriggerZone = iconFrame.insetBy(dx: -6, dy: -6).contains(location)
+        } else {
+            // No Dock icon frame yet (permission not granted, or the Dock
+            // hasn't registered it). Fall back to a right-edge hover zone so
+            // the app still works, just not anchored to the icon.
+            let screen = targetScreen().frame
+            inTriggerZone = (screen.maxX - location.x) <= edgeTriggerWidth
+                && location.y >= screen.minY
+                && location.y <= screen.minY + edgeTriggerHeight
+        }
 
         let inPanel = isExpanded && panel.frame.insetBy(dx: -4, dy: -4).contains(location)
 

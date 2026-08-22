@@ -88,6 +88,54 @@ Build a macOS utility that adds a second "dock" of apps living on the right edge
 
 ---
 
+## 2026-08-18 — Panel settles centered over the Dock, not at the corner
+
+**Decision:** The expanded panel's resting position is horizontally centered on screen (`screen.midX`), matching where the real Dock sits by default, rather than tucked into the bottom-right corner. The hover trigger stays a thin strip on the right edge; only the panel's *destination* changed. It still slides in from the right, so the motion is unchanged — just the endpoint.
+
+**Why:** checked this Mac's actual Dock settings (`defaults read com.apple.dock orientation` → `bottom`, not `right`). A bottom-right-corner panel wouldn't visually overlap a bottom-centered Dock at all, which breaks "comes out on top of the main dock." Centering the target position is what actually satisfies that requirement for the default Dock position. If the Dock's position/size preference changes later, this should read the live Dock geometry instead of assuming center — flagged as a known simplification, not a permanent decision.
+
+---
+
+## 2026-08-18 — Drag-and-drop onto the panel, in addition to Settings
+
+**Decision:** The expanded panel itself is a drop target (`Dock/DockDropView.swift`, an `NSView` implementing `NSDraggingDestination`) — dragging a `.app` bundle onto it while it's open adds it to the dock immediately, on top of the existing Settings-window "Add App…" flow.
+
+**Why:** dragging an app onto a dock is the expected macOS interaction (it's how the real Dock works) and is faster than opening Settings each time. Kept the Settings-window flow too since it's the only way to *remove* apps or toggle login-item behavior, and works even when the panel isn't currently visible.
+
+---
+
+## 2026-08-22 — Reversal: show a real Dock icon after all
+
+**Decision:** Dropped `LSUIElement` from `Info.plist` and changed the activation policy in `AppDelegate.swift` from `.accessory` to `.regular`. ExtraDock now shows a normal icon in the real Dock and in Cmd+Tab, in addition to the existing menu bar item.
+
+**Why:** explicitly requested — replaces the "App shape: background agent + menu bar icon" decision above (background agent, menu-bar-only, no Dock presence). The menu bar icon stays; it's not removed, just no longer the only way to see the app is running.
+
+---
+
+## 2026-08-22 — App icon generated as code, not designed in an image editor
+
+**Decision:** The Dock/Finder icon is produced by `Scripts/IconGen/generate-icon.swift`, a small AppKit program that draws the artwork directly with Core Graphics/`NSBezierPath` (gradient squircle background, a translucent dock pill holding three colored app squares, one white square elevated above it with a "+" mark) and rasterizes it to PNG. `Scripts/IconGen/build-icns.sh` resizes that master into the full macOS iconset and packs it into `Resources/AppIcon.icns` via `iconutil`. `build-app.sh` copies it into the bundle; `Info.plist` points at it via `CFBundleIconFile`.
+
+**Why:** no image-editing tool was available in this environment, but a precise vector-style icon is easy to describe in drawing code and trivial to re-render at every required resolution deterministically. It also means the icon's source lives in the repo as text and can be tweaked (colors, layout) by editing the script and re-running `build-icns.sh`, rather than depending on a binary design file.
+
+**Note:** `Resources/AppIcon.icns` is committed (it's a build output, but there's no separate asset pipeline to regenerate it automatically); the intermediate `AppIcon.iconset/` PNGs and the 1024px master render are gitignored since `build-icns.sh` recreates them on demand.
+
+---
+
+## 2026-08-22 — Reversal: hover trigger is the app's own Dock icon, requires Accessibility permission
+
+**Decision:** Replaced the screen-right-edge hover trigger with one anchored to ExtraDock's own icon in the real Dock. `Dock/DockIconLocator.swift` walks the Dock process's accessibility tree (`AXUIElementCreateApplication` on `com.apple.dock`'s PID → its `AXList` child → the `AXDockItem` whose title matches our app name → its `AXPosition`/`AXSize`) to get that icon's live on-screen frame. `DockPanelController` caches that frame, refreshes it on a timer plus on `NSWorkspace` launch/terminate notifications (the Dock reflows icon positions as other apps launch/quit), and uses it as the hover-trigger zone and as the horizontal anchor for where the panel appears. The panel now slides up from behind the Dock rather than in from the right edge, since it's anchored to a variable icon position instead of a fixed screen edge.
+
+**Why:** explicitly requested — "hover over the app icon" only. There's no public API for "where is my own Dock icon"; inspecting another process's UI tree via Accessibility is the standard (if unofficial) way apps like Bartender-style Dock utilities do this.
+
+**Consequence — reverses the "Hover detection: global NSEvent monitor, no Accessibility permission" decision above:** this app now requires Accessibility permission (`System Settings → Privacy & Security → Accessibility`) to work as designed. The app requests it once on first launch via `AXIsProcessTrustedWithOptions`, and there's a "Grant Accessibility Access…" item in the menu-bar menu (hidden once granted) that deep-links to that settings pane. This raises first-run friction for anyone this is shared with — flagged as a real tradeoff, not a decision to gloss over.
+
+**Graceful degradation:** if permission isn't granted (or the Dock hasn't registered the icon yet), `DockPanelController` falls back to the old right-edge hover zone and centers the panel on screen, so the app still functions — just not anchored to the icon — rather than doing nothing until permission is granted.
+
+**Dev-time caveat:** ad-hoc code signing (`codesign --sign -`) produces a new signature hash on every rebuild, and TCC (which tracks Accessibility grants) is keyed off that. Expect to re-grant Accessibility after every `Scripts/build-app.sh` run during development. This is a non-issue for an end user who builds once and doesn't touch the binary again.
+
+---
+
 ## Naming
 
 **Decision:** Product name `ExtraDock`, bundle identifier `com.divyjain.extradock`. No source folder, target, or scheme is named after Claude/the assistant — project structure is a plain, ordinary Swift package (`Sources/ExtraDock/...`) as if hand-authored.

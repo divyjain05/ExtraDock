@@ -25,6 +25,9 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BIN_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp "$ROOT_DIR/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+if [ -f "$ROOT_DIR/Resources/AppIcon.icns" ]; then
+    cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+fi
 if [ -d "$ROOT_DIR/Resources/Assets.xcassets" ]; then
     cp -R "$ROOT_DIR/Resources/Assets.xcassets" "$APP_BUNDLE/Contents/Resources/"
 fi

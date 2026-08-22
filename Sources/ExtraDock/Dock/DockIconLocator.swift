@@ -67,8 +67,10 @@ enum DockIconLocator {
 
         // AX positions are top-left-origin across the whole display arrangement;
         // AppKit screen frames are bottom-left-origin. Flip against the primary
-        // screen (the one accessibility coordinates are anchored to).
-        guard let primaryHeight = NSScreen.screens.first?.frame.height else { return nil }
+        // screen's height (the one accessibility coordinates are anchored to) —
+        // that's the screen at global origin (0,0), not necessarily screens[0].
+        let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first
+        guard let primaryHeight = primaryScreen?.frame.height else { return nil }
         let flippedY = primaryHeight - point.y - size.height
         return CGRect(x: point.x, y: flippedY, width: size.width, height: size.height)
     }

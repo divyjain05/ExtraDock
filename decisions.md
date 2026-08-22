@@ -136,6 +136,18 @@ Build a macOS utility that adds a second "dock" of apps living on the right edge
 
 ---
 
+## 2026-08-22 — Reveal animation: grow out of the icon, not slide from the screen edge
+
+**Decision:** The panel's reveal animation changed from translating in from fully off-screen below the display, to expanding directly out of the Dock icon: `DockPanelController` now animates between a `collapsedFrame()` (pinned to the icon's own bottom edge, `height: 1`) and `expandedFrame()` (the full-size resting frame), via `NSWindow.setFrame(_:display:animate:)` on both size and position at once.
+
+**Why:** requested — the original version slid up from the bottom of the screen generically, not visibly connected to the icon that triggered it. Anchoring the collapsed frame to `dockIconFrame.minY` makes the reveal read as rising directly out of that specific icon.
+
+**Bug found along the way:** the original animation used `NSAnimationContext.runAnimationGroup` with `panel.animator().setFrameOrigin(...)`. Diagnostic logging showed its completion handler firing in the same millisecond as the call, with the frame never actually changing — that code path was a silent no-op for this nonactivating panel. Switched to the older `setFrame(_:display:animate:)` API, which reliably animates both size and origin together (a prerequisite for the grow effect, since `setFrameOrigin` alone can't animate size).
+
+**Known simplification:** the SwiftUI content view is a fixed size and gets compressed/stretched along with the window during the ~0.15–0.2s animation (there's no separate clip mask), so the reveal has a slight "squish" to it rather than a clean crop-reveal. Not addressed since it's brief and reads fine at that duration — worth revisiting only if it becomes visually distracting.
+
+---
+
 ## Naming
 
 **Decision:** Product name `ExtraDock`, bundle identifier `com.divyjain.extradock`. No source folder, target, or scheme is named after Claude/the assistant — project structure is a plain, ordinary Swift package (`Sources/ExtraDock/...`) as if hand-authored.

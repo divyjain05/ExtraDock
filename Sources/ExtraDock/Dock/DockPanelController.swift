@@ -1,5 +1,4 @@
 import AppKit
-import QuartzCore
 import SwiftUI
 
 final class DockPanelController: NSObject {
@@ -24,6 +23,11 @@ final class DockPanelController: NSObject {
     private let panelPadding: CGFloat = 16
     private let iconSpacing: CGFloat = 14
     private let bottomInset: CGFloat = 4
+
+    // Full size of the panel once expanded. Held separately from panel.frame
+    // because the collapsed (hidden) state also varies panel.frame's height —
+    // see collapsedFrame()/expandedFrame().
+    private var contentSize: NSSize = .zero
 
     init(apps: [DockApp]) {
         self.apps = apps
@@ -81,6 +85,8 @@ final class DockPanelController: NSObject {
         hoverMonitor.stop()
         iconRefreshTimer?.invalidate()
         iconRefreshTimer = nil
+        pendingHideWorkItem?.cancel()
+        pendingHideWorkItem = nil
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         hide(animated: false)
     }
@@ -88,6 +94,7 @@ final class DockPanelController: NSObject {
     @objc private func refreshDockIconFrame() {
         let displayName = NSRunningApplication.current.localizedName ?? "ExtraDock"
         dockIconFrame = DockIconLocator.currentIconFrame(displayName: displayName)
+        NSLog("ExtraDock: axGranted=\(AccessibilityPermission.isGranted) refreshDockIconFrame -> \(String(describing: dockIconFrame))")
     }
 
     func update(apps: [DockApp]) {
@@ -120,8 +127,9 @@ final class DockPanelController: NSObject {
             self?.handleDrop(urls)
         }
 
+        contentSize = NSSize(width: contentWidth, height: contentHeight)
         panel.contentView = dropView
-        panel.setContentSize(NSSize(width: contentWidth, height: contentHeight))
+        panel.setContentSize(contentSize)
         positionOffscreen()
     }
 
@@ -132,8 +140,17 @@ final class DockPanelController: NSObject {
         update(apps: DockStore.shared.load())
     }
 
+    // NSScreen.main is nil here (this panel deliberately never becomes key),
+    // and NSScreen.screens[0] is not reliably the primary/menu-bar display on
+    // multi-monitor setups. Prefer whichever screen actually contains the
+    // Dock icon; fall back to the screen at global origin (0,0), which is
+    // always the primary display, regardless of array ordering.
     private func targetScreen() -> NSScreen {
-        NSScreen.main ?? NSScreen.screens[0]
+        if let iconFrame = dockIconFrame,
+           let screen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: iconFrame.midX, y: iconFrame.midY)) }) {
+            return screen
+        }
+        return NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
     // Where the panel settles horizontally: centered above this app's own
@@ -149,59 +166,64 @@ final class DockPanelController: NSObject {
         return screen.midX - width / 2
     }
 
-    private func hiddenOrigin() -> NSPoint {
+    // The resting frame: full content size, centered above the Dock icon,
+    // sitting just above the real Dock.
+    private func expandedFrame() -> NSRect {
         let screen = targetScreen().frame
-        return NSPoint(x: targetX(forWidth: panel.frame.width), y: screen.minY - panel.frame.height)
+        let origin = NSPoint(x: targetX(forWidth: contentSize.width), y: screen.minY + bottomInset)
+        return NSRect(origin: origin, size: contentSize)
     }
 
-    private func visibleOrigin() -> NSPoint {
+    // The starting frame for the slide: same size as expandedFrame (no
+    // squish/resize — a clean rigid-body slide), positioned so its top edge
+    // sits right at the bottom of the Dock icon, with the rest of the panel
+    // extending below the screen. Sliding from here to expandedFrame() reads
+    // as the panel rising straight up out of that icon.
+    private func collapsedFrame() -> NSRect {
         let screen = targetScreen().frame
-        return NSPoint(x: targetX(forWidth: panel.frame.width), y: screen.minY + bottomInset)
+        let anchorY = (dockIconFrame?.minY ?? screen.minY) - contentSize.height
+        let origin = NSPoint(x: targetX(forWidth: contentSize.width), y: anchorY)
+        return NSRect(origin: origin, size: contentSize)
     }
 
     private func positionOffscreen() {
-        panel.setFrameOrigin(hiddenOrigin())
+        panel.setFrame(collapsedFrame(), display: false)
     }
 
+    // Uses NSWindow.setFrame(_:display:animate:) rather than
+    // NSAnimationContext + animator().setFrameOrigin(): the latter's
+    // completion handler fired instantly with the frame unchanged for this
+    // nonactivating panel — it wasn't actually animating.
     private func show(animated: Bool) {
         guard !isExpanded else { return }
         isExpanded = true
-        panel.setFrameOrigin(hiddenOrigin())
+        let collapsed = collapsedFrame()
+        panel.setFrame(collapsed, display: true)
         panel.orderFrontRegardless()
-        let target = visibleOrigin()
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().setFrameOrigin(target)
-            }
-        } else {
-            panel.setFrameOrigin(target)
-        }
+        let expanded = expandedFrame()
+        NSLog("ExtraDock: show() collapsed=\(collapsed) expanded=\(expanded)")
+        panel.setFrame(expanded, display: true, animate: animated)
     }
 
     private func hide(animated: Bool) {
         guard isExpanded else { return }
         isExpanded = false
-        let target = hiddenOrigin()
-        if animated {
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.15
-                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                panel.animator().setFrameOrigin(target)
-            }, completionHandler: { [weak self] in
-                self?.panel.orderOut(nil)
-            })
-        } else {
-            panel.setFrameOrigin(target)
-            panel.orderOut(nil)
-        }
+        NSLog("ExtraDock: hide()")
+        panel.setFrame(collapsedFrame(), display: true, animate: animated)
+        panel.orderOut(nil)
     }
+
+    // Hides are debounced: leaving the trigger zone schedules a hide instead
+    // of firing immediately. The Dock icon's hit area is tiny (~40x50pt), and
+    // without this, normal hand tremor while crossing from the icon into the
+    // panel caused show()/hide() to thrash every frame — the panel would
+    // start animating in, get cancelled, and never visibly settle.
+    private var pendingHideWorkItem: DispatchWorkItem?
 
     private func handleMouseMoved(_ location: NSPoint) {
         let inTriggerZone: Bool
         if let iconFrame = dockIconFrame {
-            inTriggerZone = iconFrame.insetBy(dx: -6, dy: -6).contains(location)
+            inTriggerZone = iconFrame.insetBy(dx: -14, dy: -14).contains(location)
         } else {
             // No Dock icon frame yet (permission not granted, or the Dock
             // hasn't registered it). Fall back to a right-edge hover zone so
@@ -212,13 +234,25 @@ final class DockPanelController: NSObject {
                 && location.y <= screen.minY + edgeTriggerHeight
         }
 
-        let inPanel = isExpanded && panel.frame.insetBy(dx: -4, dy: -4).contains(location)
+        let inPanel = isExpanded && panel.frame.insetBy(dx: -8, dy: -8).contains(location)
 
         if inTriggerZone || inPanel {
+            pendingHideWorkItem?.cancel()
+            pendingHideWorkItem = nil
             show(animated: true)
-        } else {
-            hide(animated: true)
+        } else if isExpanded {
+            scheduleHide()
         }
+    }
+
+    private func scheduleHide() {
+        guard pendingHideWorkItem == nil else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.pendingHideWorkItem = nil
+            self?.hide(animated: true)
+        }
+        pendingHideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
     }
 
     private func launch(_ app: DockApp) {

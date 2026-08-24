@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 onMenuBarIconChange: { [weak self] _ in
                     self?.applyMenuBarIconPreference()
+                },
+                onIconSizeChange: { [weak self] size in
+                    self?.dockPanelController?.setIconSize(size)
                 }
             )
         }

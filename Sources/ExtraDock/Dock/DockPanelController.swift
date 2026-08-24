@@ -14,12 +14,19 @@ final class DockPanelController: NSObject {
     private var dockIconFrame: CGRect?
     private var iconRefreshTimer: Timer?
 
+    // While the Size slider in Settings is being dragged, the panel is forced
+    // visible so the change is seen live, and the hover-hide logic is suppressed
+    // so it doesn't tuck away between ticks. It auto-hides shortly after the
+    // last adjustment.
+    private var isPreviewingSize = false
+    private var sizePreviewHideWorkItem: DispatchWorkItem?
+
     // Fallback trigger for when the Dock icon's frame isn't known yet
     // (permission not granted, or the Dock hasn't registered it yet).
     private let edgeTriggerWidth: CGFloat = 6
     private let edgeTriggerHeight: CGFloat = 320
 
-    private let iconSize: CGFloat = 56
+    private var iconSize: CGFloat = AppPreferences.iconSize
     private let panelPadding: CGFloat = 16
     private let iconSpacing: CGFloat = 14
 
@@ -97,6 +104,41 @@ final class DockPanelController: NSObject {
     func update(apps: [DockApp]) {
         self.apps = apps
         rebuildContent()
+    }
+
+    /// Live-applies a new icon size from Settings. Rebuilds the panel at the new
+    /// dimensions and forces it visible so the change is seen as it happens, then
+    /// tucks it away shortly after adjustments stop.
+    func setIconSize(_ size: CGFloat) {
+        iconSize = size
+        rebuildContent()
+        isPreviewingSize = true
+        showForSizePreview()
+        scheduleSizePreviewHide()
+    }
+
+    // Like show(), but never animates (snappy live feedback) and always pins the
+    // panel to the freshly-rebuilt expanded frame, even when already visible —
+    // rebuildContent() leaves it collapsed, so this must set the frame each tick.
+    private func showForSizePreview() {
+        let wasExpanded = isExpanded
+        isExpanded = true
+        if !wasExpanded {
+            panel.setFrame(collapsedFrame(), display: false)
+            panel.orderFrontRegardless()
+        }
+        panel.setFrame(expandedFrame(), display: true)
+    }
+
+    private func scheduleSizePreviewHide() {
+        sizePreviewHideWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.isPreviewingSize = false
+            self.hide(animated: true)
+        }
+        sizePreviewHideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: item)
     }
 
     /// Manual toggle for the status-bar menu, independent of hover — useful
@@ -210,6 +252,9 @@ final class DockPanelController: NSObject {
     }
 
     private func handleMouseMoved(_ location: NSPoint) {
+        // Don't let hover logic hide the panel while the Size slider is driving it.
+        if isPreviewingSize { return }
+
         let inTriggerZone: Bool
         if let iconFrame = dockIconFrame {
             inTriggerZone = iconFrame.insetBy(dx: -14, dy: -14).contains(location)

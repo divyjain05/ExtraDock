@@ -37,6 +37,16 @@ struct SettingsView: View {
                 Toggle("Launch at Login", isOn: $model.launchAtLogin)
             }
 
+            HStack(spacing: 8) {
+                Text("Size")
+                Image(systemName: "app").imageScale(.small)
+                Slider(
+                    value: $model.iconSize,
+                    in: Double(AppPreferences.minIconSize)...Double(AppPreferences.maxIconSize)
+                )
+                Image(systemName: "app").imageScale(.large)
+            }
+
             Toggle("Show Menu Bar Icon", isOn: $model.showMenuBarIcon)
         }
         .padding(20)

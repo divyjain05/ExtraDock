@@ -13,14 +13,22 @@ final class SettingsViewModel: ObservableObject {
             onMenuBarIconChange?(showMenuBarIcon)
         }
     }
+    @Published var iconSize: Double {
+        didSet {
+            AppPreferences.iconSize = CGFloat(iconSize)
+            onIconSizeChange?(CGFloat(iconSize))
+        }
+    }
 
     var onChange: (() -> Void)?
     var onMenuBarIconChange: ((Bool) -> Void)?
+    var onIconSizeChange: ((CGFloat) -> Void)?
 
     init() {
         apps = DockStore.shared.load()
         launchAtLogin = LoginItemManager.isEnabled
         showMenuBarIcon = AppPreferences.showMenuBarIcon
+        iconSize = Double(AppPreferences.iconSize)
     }
 
     func remove(_ app: DockApp) {
@@ -46,10 +54,15 @@ final class SettingsViewModel: ObservableObject {
 final class SettingsWindowController: NSWindowController {
     private let model: SettingsViewModel
 
-    init(onChange: @escaping () -> Void, onMenuBarIconChange: @escaping (Bool) -> Void) {
+    init(
+        onChange: @escaping () -> Void,
+        onMenuBarIconChange: @escaping (Bool) -> Void,
+        onIconSizeChange: @escaping (CGFloat) -> Void
+    ) {
         let model = SettingsViewModel()
         model.onChange = onChange
         model.onMenuBarIconChange = onMenuBarIconChange
+        model.onIconSizeChange = onIconSizeChange
         self.model = model
 
         let hosting = NSHostingController(rootView: SettingsView(model: model))

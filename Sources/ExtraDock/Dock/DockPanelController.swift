@@ -110,9 +110,13 @@ final class DockPanelController: NSObject {
         let contentWidth = iconsWidth + panelPadding * 2
         let contentHeight = iconSize + panelPadding * 2
 
-        let view = DockView(apps: apps, iconSize: iconSize) { [weak self] app in
-            self?.launch(app)
-        }
+        let view = DockView(
+            apps: apps,
+            iconSize: iconSize,
+            spacing: iconSpacing,
+            onLaunch: { [weak self] app in self?.launch(app) },
+            onReorder: { [weak self] newOrder in self?.persistReorder(newOrder) }
+        )
         let hosting = NSHostingView(rootView: view)
         let bounds = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
         hosting.frame = bounds
@@ -226,6 +230,14 @@ final class DockPanelController: NSObject {
         } else if isExpanded {
             hide(animated: true)
         }
+    }
+
+    // Persists a drag-reorder from the panel. Updates the cached order and
+    // saves it, but deliberately does not rebuild the panel — the DockView
+    // already shows the new order, so rebuilding would only cause a flash.
+    private func persistReorder(_ newOrder: [DockApp]) {
+        apps = newOrder
+        DockStore.shared.save(newOrder)
     }
 
     private func launch(_ app: DockApp) {

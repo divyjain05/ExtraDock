@@ -200,7 +200,7 @@ final class DockPanelController: NSObject {
             onLaunch: { [weak self] app in self?.launch(app) },
             onReorder: { [weak self] newOrder in self?.persistReorder(newOrder) }
         )
-        let hosting = NSHostingView(rootView: view)
+        let hosting = CursorForcingHostingView(rootView: view)
         let bounds = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
         hosting.frame = bounds
         hosting.autoresizingMask = [.width, .height]
@@ -292,17 +292,17 @@ final class DockPanelController: NSObject {
         panel.setFrame(expandedFrame(), display: true, animate: animated)
     }
 
-    // Hover hit-zone for the Dock icon. With magnification on, the visible icon
-    // grows much taller than its resting tile, so the zone reaches up to the
+    // Hover hit-zone for the Dock icon. The zone is confined to the icon's own
+    // bounds so the panel opens only when the cursor is directly over this app's
+    // icon, not merely near it. With magnification on the visible icon grows
+    // much taller than its resting tile, so the zone still reaches up to the
     // magnified top — otherwise hovering the upper half of a grown icon misses.
-    // Horizontal padding stays modest so neighbouring icons don't trigger it.
     private func triggerZone(for iconFrame: CGRect) -> CGRect {
-        let horizontalPad: CGFloat = 14
         let topReach = magnification.enabled ? max(iconFrame.height, magnification.maxTile) : iconFrame.height
-        let minX = iconFrame.midX - iconFrame.width / 2 - horizontalPad
-        let width = iconFrame.width + horizontalPad * 2
-        let minY = iconFrame.minY - 14
-        let maxY = iconFrame.minY + topReach + 14
+        let minX = iconFrame.midX - iconFrame.width / 2
+        let width = iconFrame.width
+        let minY = iconFrame.minY
+        let maxY = iconFrame.minY + topReach
         return CGRect(x: minX, y: minY, width: width, height: maxY - minY)
     }
 

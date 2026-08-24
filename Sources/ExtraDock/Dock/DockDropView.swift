@@ -13,6 +13,28 @@ final class DockDropView: NSView {
         registerForDraggedTypes([.fileURL])
     }
 
+    // Keep the pointer a normal arrow the whole time it's over the panel.
+    // Without this, the borderless resizing-style cursor (the double-headed
+    // arrows) can appear near the panel's edges.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .cursorUpdate, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.arrow.set()
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         appURLs(from: sender).isEmpty ? [] : .copy
     }

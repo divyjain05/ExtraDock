@@ -21,6 +21,18 @@ final class DockPanelController: NSObject {
     private var isPreviewingSize = false
     private var sizePreviewHideWorkItem: DispatchWorkItem?
 
+    // Cached Dock magnification settings. Read from com.apple.dock so the
+    // trigger zone and panel anchor can account for how much a hovered icon
+    // grows. Refreshed on the same cadence as the icon frame.
+    private struct DockMagnification {
+        let enabled: Bool
+        let restingTile: CGFloat
+        let largeTile: CGFloat
+        // On-screen height an icon can occupy (magnified when enabled).
+        var maxTile: CGFloat { enabled ? max(restingTile, largeTile) : restingTile }
+    }
+    private var magnification = DockMagnification(enabled: false, restingTile: 48, largeTile: 128)
+
     // Fallback trigger for when the Dock icon's frame isn't known yet
     // (permission not granted, or the Dock hasn't registered it yet).
     private let edgeTriggerWidth: CGFloat = 6
@@ -44,6 +56,7 @@ final class DockPanelController: NSObject {
             defer: false
         )
         panel.isFloatingPanel = true
+        panel.styleMask.remove(.resizable)   // no edge-resize cursors on the panel
         panel.level = DockPanelController.levelAboveDock()
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         panel.isOpaque = false
@@ -96,9 +109,37 @@ final class DockPanelController: NSObject {
     }
 
     @objc private func refreshDockIconFrame() {
+        magnification = readDockMagnification()
+
+        // With magnification on, an icon's frame changes continuously as the
+        // cursor sweeps the Dock. Sampling it then would make the cached anchor
+        // jitter. Once we have a stable resting frame, only re-sample it while
+        // the cursor is away from the Dock band (icons at rest).
+        if dockIconFrame != nil && isCursorInDockBand(NSEvent.mouseLocation) { return }
+
         let displayName = NSRunningApplication.current.localizedName ?? "ExtraDock"
         dockIconFrame = DockIconLocator.currentIconFrame(displayName: displayName)
         NSLog("ExtraDock: axGranted=\(AccessibilityPermission.isGranted) refreshDockIconFrame -> \(String(describing: dockIconFrame))")
+    }
+
+    private func readDockMagnification() -> DockMagnification {
+        let defaults = UserDefaults(suiteName: "com.apple.dock")
+        let enabled = defaults?.bool(forKey: "magnification") ?? false
+        let tile = CGFloat(defaults?.double(forKey: "tilesize") ?? 0)
+        let large = CGFloat(defaults?.double(forKey: "largesize") ?? 0)
+        return DockMagnification(
+            enabled: enabled,
+            restingTile: tile > 0 ? tile : 48,
+            largeTile: large > 0 ? large : 128
+        )
+    }
+
+    // True when the cursor is down in the Dock's magnification band (near the
+    // bottom of the target screen), where icons are actively growing/reflowing.
+    private func isCursorInDockBand(_ location: NSPoint) -> Bool {
+        let screen = targetScreen().frame
+        let bandHeight = magnification.maxTile + 60
+        return location.y >= screen.minY && location.y <= screen.minY + bandHeight
     }
 
     func update(apps: [DockApp]) {
@@ -215,6 +256,13 @@ final class DockPanelController: NSObject {
     // reads as rising directly out of it, rather than sliding up from
     // somewhere else on screen.
     private func anchorY() -> CGFloat {
+        // Anchor flush to the *resting* Dock icon top. dockIconFrame is captured
+        // while the cursor is away from the Dock (see refreshDockIconFrame), so
+        // maxY is the resting top regardless of current magnification. The panel
+        // sits one window level above the Dock, so a magnified icon simply grows
+        // *behind* it — anchoring higher (to the magnified top) would instead
+        // leave a visible gap once the Dock de-magnifies as the cursor moves up
+        // into the panel.
         dockIconFrame?.maxY ?? targetScreen().frame.minY
     }
 
@@ -244,6 +292,20 @@ final class DockPanelController: NSObject {
         panel.setFrame(expandedFrame(), display: true, animate: animated)
     }
 
+    // Hover hit-zone for the Dock icon. With magnification on, the visible icon
+    // grows much taller than its resting tile, so the zone reaches up to the
+    // magnified top — otherwise hovering the upper half of a grown icon misses.
+    // Horizontal padding stays modest so neighbouring icons don't trigger it.
+    private func triggerZone(for iconFrame: CGRect) -> CGRect {
+        let horizontalPad: CGFloat = 14
+        let topReach = magnification.enabled ? max(iconFrame.height, magnification.maxTile) : iconFrame.height
+        let minX = iconFrame.midX - iconFrame.width / 2 - horizontalPad
+        let width = iconFrame.width + horizontalPad * 2
+        let minY = iconFrame.minY - 14
+        let maxY = iconFrame.minY + topReach + 14
+        return CGRect(x: minX, y: minY, width: width, height: maxY - minY)
+    }
+
     private func hide(animated: Bool) {
         guard isExpanded else { return }
         isExpanded = false
@@ -257,7 +319,7 @@ final class DockPanelController: NSObject {
 
         let inTriggerZone: Bool
         if let iconFrame = dockIconFrame {
-            inTriggerZone = iconFrame.insetBy(dx: -14, dy: -14).contains(location)
+            inTriggerZone = triggerZone(for: iconFrame).contains(location)
         } else {
             // No Dock icon frame yet (permission not granted, or the Dock
             // hasn't registered it). Fall back to a right-edge hover zone so

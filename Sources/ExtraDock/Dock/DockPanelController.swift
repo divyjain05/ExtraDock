@@ -112,10 +112,14 @@ final class DockPanelController: NSObject {
         magnification = readDockMagnification()
 
         // With magnification on, an icon's frame changes continuously as the
-        // cursor sweeps the Dock. Sampling it then would make the cached anchor
-        // jitter. Once we have a stable resting frame, only re-sample it while
-        // the cursor is away from the Dock band (icons at rest).
-        if dockIconFrame != nil && isCursorInDockBand(NSEvent.mouseLocation) { return }
+        // cursor sweeps the Dock, so a sample taken then is distorted (shifted
+        // midX from growing neighbors, taller maxY). Cached as the "resting"
+        // anchor it misaligns the panel. Skip sampling while the cursor is in
+        // the band — including the very first sample (dockIconFrame still nil),
+        // otherwise launching with the cursor over the Dock caches a magnified
+        // frame. Only gate on magnification: with it off the frame is stable
+        // regardless of cursor position, so sample immediately.
+        if magnification.enabled && isCursorInDockBand(NSEvent.mouseLocation) { return }
 
         let displayName = NSRunningApplication.current.localizedName ?? "ExtraDock"
         dockIconFrame = DockIconLocator.currentIconFrame(displayName: displayName)

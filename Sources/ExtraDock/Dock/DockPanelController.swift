@@ -296,18 +296,13 @@ final class DockPanelController: NSObject {
         panel.setFrame(expandedFrame(), display: true, animate: animated)
     }
 
-    // Hover hit-zone for the Dock icon. The zone is confined to the icon's own
-    // bounds so the panel opens only when the cursor is directly over this app's
-    // icon, not merely near it. With magnification on the visible icon grows
-    // much taller than its resting tile, so the zone still reaches up to the
-    // magnified top — otherwise hovering the upper half of a grown icon misses.
+    // Hover hit-zone for the Dock icon. The zone is exactly the icon's own frame
+    // so the panel opens only when the cursor is within the icon's boundaries,
+    // not merely near it. Magnification grows the icon upward from its baseline,
+    // but the cursor still enters over the resting tile, so the resting frame is
+    // the correct target and the zone must not extend above it.
     private func triggerZone(for iconFrame: CGRect) -> CGRect {
-        let topReach = magnification.enabled ? max(iconFrame.height, magnification.maxTile) : iconFrame.height
-        let minX = iconFrame.midX - iconFrame.width / 2
-        let width = iconFrame.width
-        let minY = iconFrame.minY
-        let maxY = iconFrame.minY + topReach
-        return CGRect(x: minX, y: minY, width: width, height: maxY - minY)
+        iconFrame
     }
 
     private func hide(animated: Bool) {

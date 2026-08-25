@@ -79,6 +79,11 @@ struct DockView: View {
     private func dragGesture(for app: DockApp) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
+                // Cursor rects and cursorUpdate are suppressed while the mouse
+                // button is held, so the system's drag-tracking loop can surface
+                // a non-arrow cursor (e.g. the resize cursor near the panel
+                // edges). Re-assert the plain arrow on every drag frame.
+                NSCursor.arrow.set()
                 if draggingID != app.id {
                     draggingID = app.id
                     insertion = ordered.firstIndex(where: { $0.id == app.id }) ?? 0

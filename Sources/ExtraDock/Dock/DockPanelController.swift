@@ -21,6 +21,13 @@ final class DockPanelController: NSObject {
     private var isPreviewingSize = false
     private var sizePreviewHideWorkItem: DispatchWorkItem?
 
+    // The panel is shared across all Spaces (.canJoinAllSpaces), so a switch
+    // between desktops must not leave it lingering or flashing. On an active-
+    // Space change the panel is force-hidden and hover-driven re-show is
+    // suppressed until this deadline, letting the transition's stray mouseMoved
+    // events settle before the cursor is trusted again.
+    private var spaceChangeSuppressUntil: Date?
+
     // Cached Dock magnification settings. Read from com.apple.dock so the
     // trigger zone and panel anchor can account for how much a hovered icon
     // grows. Refreshed on the same cadence as the icon frame.
@@ -98,6 +105,18 @@ final class DockPanelController: NSObject {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
+        center.addObserver(self, selector: #selector(activeSpaceDidChange), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+    }
+
+    // On a desktop switch, tuck the panel away immediately (no animation, so it
+    // can't be caught mid-slide on the outgoing Space) and ignore hover for a
+    // short window while the transition's stray mouseMoved events settle. Also
+    // cancels any Size-preview hold, which otherwise pins the panel visible.
+    @objc private func activeSpaceDidChange() {
+        isPreviewingSize = false
+        sizePreviewHideWorkItem?.cancel()
+        spaceChangeSuppressUntil = Date().addingTimeInterval(0.4)
+        hide(animated: false)
     }
 
     func stop() {
@@ -315,6 +334,13 @@ final class DockPanelController: NSObject {
     private func handleMouseMoved(_ location: NSPoint) {
         // Don't let hover logic hide the panel while the Size slider is driving it.
         if isPreviewingSize { return }
+
+        // Ignore the stray mouseMoved events a Space switch emits; re-showing on
+        // one of them is exactly what makes the panel flash on the wrong desktop.
+        if let until = spaceChangeSuppressUntil {
+            if Date() < until { return }
+            spaceChangeSuppressUntil = nil
+        }
 
         let inTriggerZone: Bool
         if let iconFrame = dockIconFrame {

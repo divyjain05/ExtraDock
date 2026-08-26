@@ -71,6 +71,10 @@ final class DockPanelController: NSObject {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
+        // If the panel ever becomes key (e.g. during a drag-drop), it is then
+        // the app's key window; accepting mouse-moved events keeps the local
+        // hover monitor fed while ExtraDock is frontmost.
+        panel.acceptsMouseMovedEvents = true
 
         super.init()
 

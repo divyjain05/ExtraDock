@@ -69,6 +69,11 @@ final class SettingsWindowController: NSWindowController {
         let window = NSWindow(contentViewController: hosting)
         window.title = "ExtraDock Settings"
         window.styleMask = [.titled, .closable]
+        // While Settings is the key window, ExtraDock is the frontmost app, so
+        // the global hover monitor is silent. Accepting mouse-moved events lets
+        // the local monitor receive cursor movement (including over the Dock)
+        // so hovering the Dock icon still opens the panel.
+        window.acceptsMouseMovedEvents = true
 
         super.init(window: window)
     }

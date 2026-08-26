@@ -110,6 +110,20 @@ final class DockPanelController: NSObject {
         center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
         center.addObserver(self, selector: #selector(activeSpaceDidChange), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        // Global mouse monitors go silent across a display/system sleep, so after
+        // the Mac has been asleep for hours hovering the Dock stops opening the
+        // panel. Re-arm the monitor on wake so it keeps working no matter how long
+        // the app has been idle. Both notifications fire because display sleep
+        // (screensDidWake) is far more common over "hours idle" than full system
+        // sleep (didWake).
+        center.addObserver(self, selector: #selector(reawaken), name: NSWorkspace.didWakeNotification, object: nil)
+        center.addObserver(self, selector: #selector(reawaken), name: NSWorkspace.screensDidWakeNotification, object: nil)
+    }
+
+    @objc private func reawaken() {
+        hoverMonitor.stop()
+        hoverMonitor.start()
+        refreshDockIconFrame()
     }
 
     // On a desktop switch, tuck the panel away immediately (no animation, so it

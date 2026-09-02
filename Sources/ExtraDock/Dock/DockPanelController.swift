@@ -14,6 +14,12 @@ final class DockPanelController: NSObject {
     private var dockIconFrame: CGRect?
     private var iconRefreshTimer: Timer?
 
+    // Belt-and-suspenders self-heal. The notification-driven reawaken covers the
+    // known ways the global mouse monitor goes silent (sleep/wake, lock,
+    // screensaver), but if some other idle trigger slips through, this low-cadence
+    // heartbeat re-arms the monitor anyway so hover can never stay dead for long.
+    private var rearmTimer: Timer?
+
     // While the Size slider in Settings is being dragged, the panel is forced
     // visible so the change is seen live, and the hover-hide logic is suppressed
     // so it doesn't tuck away between ticks. It auto-hides shortly after the
@@ -106,6 +112,12 @@ final class DockPanelController: NSObject {
         RunLoop.main.add(timer, forMode: .common)
         iconRefreshTimer = timer
 
+        let rearm = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            self?.reawaken()
+        }
+        RunLoop.main.add(rearm, forMode: .common)
+        rearmTimer = rearm
+
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         center.addObserver(self, selector: #selector(refreshDockIconFrame), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
@@ -118,6 +130,16 @@ final class DockPanelController: NSObject {
         // sleep (didWake).
         center.addObserver(self, selector: #selector(reawaken), name: NSWorkspace.didWakeNotification, object: nil)
         center.addObserver(self, selector: #selector(reawaken), name: NSWorkspace.screensDidWakeNotification, object: nil)
+
+        // Same silence happens across the screensaver / screen lock, which on an
+        // idle Mac kick in *before* (or instead of) display sleep — so over
+        // "a couple hours unused" the monitor dies here and only recovers later
+        // when a real display sleep/wake finally re-arms it, which is exactly the
+        // "stops working, then randomly comes back" symptom. These events aren't
+        // on NSWorkspace's center; they come from DistributedNotificationCenter.
+        let distributed = DistributedNotificationCenter.default()
+        distributed.addObserver(self, selector: #selector(reawaken), name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
+        distributed.addObserver(self, selector: #selector(reawaken), name: NSNotification.Name("com.apple.screensaver.didstop"), object: nil)
     }
 
     @objc private func reawaken() {
@@ -141,7 +163,10 @@ final class DockPanelController: NSObject {
         hoverMonitor.stop()
         iconRefreshTimer?.invalidate()
         iconRefreshTimer = nil
+        rearmTimer?.invalidate()
+        rearmTimer = nil
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        DistributedNotificationCenter.default().removeObserver(self)
         hide(animated: false)
     }
 
@@ -363,14 +388,19 @@ final class DockPanelController: NSObject {
         let inTriggerZone: Bool
         if let iconFrame = dockIconFrame {
             inTriggerZone = triggerZone(for: iconFrame).contains(location)
-        } else {
-            // No Dock icon frame yet (permission not granted, or the Dock
-            // hasn't registered it). Fall back to a right-edge hover zone so
-            // the app still works, just not anchored to the icon.
+        } else if !AccessibilityPermission.isGranted {
+            // Permission denied, so the icon can never be located. Fall back to a
+            // right-edge hover zone so the app still works, just not anchored to
+            // the icon.
             let screen = targetScreen().frame
             inTriggerZone = (screen.maxX - location.x) <= edgeTriggerWidth
                 && location.y >= screen.minY
                 && location.y <= screen.minY + edgeTriggerHeight
+        } else {
+            // Granted but the frame isn't resolved yet (the Dock hasn't
+            // registered the icon at launch). Don't phantom-trigger at the
+            // screen edge in the meantime — wait for the frame to land.
+            inTriggerZone = false
         }
 
         let inPanel = isExpanded && panel.frame.insetBy(dx: -8, dy: -8).contains(location)

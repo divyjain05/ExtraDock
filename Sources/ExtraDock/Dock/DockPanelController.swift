@@ -71,7 +71,7 @@ final class DockPanelController: NSObject {
         panel.isFloatingPanel = true
         panel.styleMask.remove(.resizable)   // no edge-resize cursors on the panel
         panel.level = DockPanelController.levelAboveDock()
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        panel.collectionBehavior = DockPanelController.panelCollectionBehavior
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -95,6 +95,21 @@ final class DockPanelController: NSObject {
     // Sitting one above it renders this panel on top of the real Dock.
     private static func levelAboveDock() -> NSWindow.Level {
         NSWindow.Level(rawValue: 20 + 1)
+    }
+
+    private static let panelCollectionBehavior: NSWindow.CollectionBehavior =
+        [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+
+    // Every show routes through here. A .canJoinAllSpaces panel that gets
+    // orderOut'd on hide() can have its all-Spaces membership dropped by the
+    // WindowServer; a plain orderFront then brings it back only on the desktop
+    // where it was last shown, so on any *other* desktop it never appears —
+    // exactly the "opens only on the desktop it was first opened on" bug.
+    // Re-asserting the collection behavior right before ordering front forces
+    // the panel onto the currently active Space every time.
+    private func orderPanelFront() {
+        panel.collectionBehavior = DockPanelController.panelCollectionBehavior
+        panel.orderFrontRegardless()
     }
 
     func start() {
@@ -232,7 +247,7 @@ final class DockPanelController: NSObject {
         isExpanded = true
         if !wasExpanded {
             panel.setFrame(collapsedFrame(), display: false)
-            panel.orderFrontRegardless()
+            orderPanelFront()
         }
         panel.setFrame(expandedFrame(), display: true)
     }
@@ -354,7 +369,7 @@ final class DockPanelController: NSObject {
         guard !isExpanded else { return }
         isExpanded = true
         panel.setFrame(collapsedFrame(), display: true)
-        panel.orderFrontRegardless()
+        orderPanelFront()
         panel.setFrame(expandedFrame(), display: true, animate: animated)
     }
 

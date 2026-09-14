@@ -9,9 +9,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.divyjain.extradock</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.1.1</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleExecutable</key>
@@ -24,5 +24,18 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Personal project.</string>
+
+	<!-- Sparkle auto-update. SUFeedURL: the appcast this app polls. SUPublicEDKey:
+	     the EdDSA public key from `generate_keys` (see SPARKLE.md); every update
+	     archive is verified against it, so REPLACE the placeholder before shipping
+	     or updates will be rejected. -->
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/divyjain05/ExtraDock/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>IQyz9msNF534mKBsjeNmpDH737+tLK/ug8RQWAGeCZ4=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

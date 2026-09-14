@@ -106,8 +106,12 @@ final class DockPanelController: NSObject {
     // where it was last shown, so on any *other* desktop it never appears —
     // exactly the "opens only on the desktop it was first opened on" bug.
     // Re-asserting the collection behavior right before ordering front forces
-    // the panel onto the currently active Space every time.
+    // the panel onto the currently active Space. Assigning the *same* value it
+    // already holds can be optimized to a no-op, though, which leaves the panel
+    // pinned to its origin Space; clearing it first guarantees the change
+    // registers so the panel reliably re-joins the active Space every time.
     private func orderPanelFront() {
+        panel.collectionBehavior = []
         panel.collectionBehavior = DockPanelController.panelCollectionBehavior
         panel.orderFrontRegardless()
     }

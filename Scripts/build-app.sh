@@ -32,6 +32,24 @@ if [ -d "$ROOT_DIR/Resources/Assets.xcassets" ]; then
     cp -R "$ROOT_DIR/Resources/Assets.xcassets" "$APP_BUNDLE/Contents/Resources/"
 fi
 
+# Embed Sparkle.framework. SPM links against it but never copies it into a
+# bundle (that's an Xcode-only build phase), so do it here. The framework's
+# install name is @rpath/Sparkle.framework/..., so the executable also needs an
+# rpath pointing at Contents/Frameworks. ditto preserves the framework's version
+# symlinks and its nested helpers (Autoupdate, Updater.app, XPCServices) intact;
+# the codesign --deep step below then signs all of them along with the app.
+FRAMEWORK_SRC="$ROOT_DIR/.build/$CONFIG/Sparkle.framework"
+if [ ! -d "$FRAMEWORK_SRC" ]; then
+    FRAMEWORK_SRC="$(find "$ROOT_DIR/.build" -path "*/Sparkle.xcframework/*/Sparkle.framework" -type d 2>/dev/null | head -1)"
+fi
+if [ ! -d "$FRAMEWORK_SRC" ]; then
+    echo "error: Sparkle.framework not found under .build — run 'swift build -c $CONFIG' first" >&2
+    exit 1
+fi
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+ditto "$FRAMEWORK_SRC" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath "@loader_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
 # Prefer a stable, self-signed identity (Scripts/setup-signing.sh) so the code
 # hash — and therefore the Accessibility (TCC) grant — stays constant across
 # rebuilds. Ad-hoc signing changes the hash every build and silently revokes

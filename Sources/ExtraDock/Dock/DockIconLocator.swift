@@ -6,8 +6,22 @@ import AppKit
 /// "where is my Dock icon" — this is the standard workaround, and it's why
 /// Accessibility permission is required.
 enum DockIconLocator {
+    // This tree walk is synchronous and runs on the main thread (a 2s icon-
+    // refresh timer, plus the 30s heartbeat that re-arms the hover monitor). A
+    // Dock that's slow to answer — common right after waking from a long idle,
+    // when it's been paged out — can block a cross-process AX request far past
+    // the generous default timeout: long enough to look like the app froze, and
+    // to stall the very heartbeat meant to recover it. Cap how long any AX
+    // message may block this process. Applied once, process-wide via the
+    // system-wide element (a per-element timeout wouldn't cover child elements).
+    // ponytail: process-global 2s cap; move the walk off the main thread if it bites.
+    private static let capMessagingTimeoutOnce: Void = {
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 2)
+    }()
+
     static func currentIconFrame(displayName: String) -> CGRect? {
         guard AccessibilityPermission.isGranted else { return nil }
+        _ = capMessagingTimeoutOnce
         guard let dockApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.dock" }) else {
             return nil
         }

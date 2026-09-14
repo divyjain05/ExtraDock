@@ -1,13 +1,26 @@
 import AppKit
+import Sparkle
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var dockPanelController: DockPanelController?
     private var settingsWindowController: SettingsWindowController?
 
+    // Sparkle's standard updater. Created at launch with startingUpdater:true so
+    // it runs its own background check schedule (per SUFeedURL / automatic-check
+    // keys in Info.plist). The "Check for Updates…" menu item targets it directly
+    // so Sparkle also handles enabling/disabling that item while a check runs.
+    private var updaterController: SPUStandardUpdaterController!
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         AccessibilityPermission.requestIfNeeded()
+
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
 
         let apps = DockStore.shared.load()
         let controller = DockPanelController(apps: apps)
@@ -46,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show Extra Dock", action: #selector(togglePanel), target: self)
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), target: self)
+        menu.addItem(withTitle: "Check for Updates…",
+                     action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                     target: updaterController)
         if !AccessibilityPermission.isGranted {
             menu.addItem(.separator())
             menu.addItem(withTitle: "Grant Accessibility Access…", action: #selector(openAccessibilitySettings), target: self)

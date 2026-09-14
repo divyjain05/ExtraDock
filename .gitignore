@@ -6,3 +6,10 @@ build/
 xcuserdata/
 Scripts/IconGen/AppIcon.iconset/
 Scripts/IconGen/icon-1024-master.png
+
+# Sparkle signing key backups — the private key must never be committed.
+# (SPARKLE.md's `generate_keys -x key.txt` would otherwise drop one in the repo.)
+key.txt
+*.pem
+*.p12
+*private*.pem
